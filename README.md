@@ -272,7 +272,7 @@ Then **se-scraper** will create `K+1` dedicated browser instances with a unique 
 
 The problem is that [puppeteer-cluster library](https://github.com/thomasdondorf/puppeteer-cluster) does only allow identical options for subsequent new browser instances. Therefore, it is not trivial to launch a cluster of browsers with distinct proxy settings. Right now, every browser has the same options. It's not possible to set options on a per browser basis.
 
-Solution: 
+Solution:
 
 1. Create a [upstream proxy router](https://github.com/GoogleChrome/puppeteer/issues/678).
 2. Modify [puppeteer-cluster library](https://github.com/thomasdondorf/puppeteer-cluster) to accept a list of proxy strings and then pop() from this list at every new call to `workerInstance()` in https://github.com/thomasdondorf/puppeteer-cluster/blob/master/src/Cluster.ts I wrote an [issue here](https://github.com/thomasdondorf/puppeteer-cluster/issues/107). **I ended up doing this**.
@@ -281,7 +281,7 @@ Solution:
 ## Technical Notes
 
 Scraping is done with a headless chromium browser using the automation library puppeteer. Puppeteer is a Node library which provides a high-level API to control headless Chrome or Chromium over the DevTools Protocol.
- 
+
 If you need to deploy scraping to the cloud (AWS or Azure), you can contact me at **hire@incolumitas.com**
 
 The chromium browser is started with the following flags to prevent
@@ -395,6 +395,8 @@ let browser_config = {
     // whether to prevent images, css, fonts and media from being loaded
     // will speed up scraping a great deal
     block_assets: true,
+    // block specific requests using regex patterns
+    block_regex: [],
     // path to js module that extends functionality
     // this module should export the functions:
     // get_browser, handle_metadata, close_browser

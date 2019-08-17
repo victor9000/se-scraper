@@ -88,16 +88,33 @@ module.exports = class Scraper {
         }
 
         // block some assets to speed up scraping
-        if (this.config.block_assets === true) {
+        // and control outbound requests
+        const is_block_assets = this.config.block_assets === true;
+        const is_block_regex = this.config.block_regex.length > 0;
+        // hook up to request event
+        if (is_block_assets || is_block_regex) {
             await this.page.setRequestInterception(true);
             this.page.on('request', (req) => {
-                let type = req.resourceType();
-                const block = ['stylesheet', 'font', 'image', 'media'];
-                if (block.includes(type)) {
-                    req.abort();
-                } else {
-                    req.continue();
+                // check asset blocking
+                if(is_block_assets === true) {
+                    let type = req.resourceType();
+                    const block = ['stylesheet', 'font', 'image', 'media'];
+                    if (block.includes(type)) {
+                        req.abort();
+                        log(this.config, 4, `Blocked: ${req._url}`);
+                        return;
+                    }
                 }
+                // check regex blocking
+                if(is_block_regex === true) {
+                    if (this.config.block_regex.some(regex => regex.test(req._url))) {
+                        req.abort();
+                        log(this.config, 4, `Blocked: ${req._url}`);
+                        return;
+                    }
+                }
+                // no block condition was satisfied, carry on.
+                req.continue();
             });
         }
 
@@ -206,7 +223,7 @@ module.exports = class Scraper {
                                 // remove all comment nodes
                                 var nodeIterator = document.createNodeIterator(
                                     document.body,
-                                    NodeFilter.SHOW_COMMENT,    
+                                    NodeFilter.SHOW_COMMENT,
                                     { acceptNode: function(node) { return NodeFilter.FILTER_ACCEPT; } }
                                 );
                                 while(nodeIterator.nextNode()){
@@ -351,7 +368,7 @@ module.exports = class Scraper {
     no_results(needles, html) {
         for (let needle of needles) {
             if (html.includes(needle)) {
-                console.log(this.config, 2, `HTML contains needle ${needle}. no_results=true`);
+                log(this.config, 2, `HTML contains needle ${needle}. no_results=true`);
                 return true;
             }
         }
