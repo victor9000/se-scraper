@@ -2,6 +2,7 @@
 const zlib = require('zlib');
 var fs = require('fs');
 var os = require("os");
+const { Cluster } = require('puppeteer-cluster');
 
 const UserAgent = require('user-agents');
 const google = require('./modules/google.js');
@@ -12,11 +13,10 @@ const infospace = require('./modules/infospace.js');
 const youtube = require('./modules/youtube.js');
 const duckduckgo = require('./modules/duckduckgo.js');
 const tickersearch = require('./modules/ticker_search.js');
-const { Cluster } = require('./puppeteer-cluster/dist/index.js');
 const common = require('./modules/common.js');
 var log = common.log;
 
-const MAX_ALLOWED_BROWSERS = 6;
+const MAX_ALLOWED_BROWSERS = 1;
 
 function write_results(fname, data) {
     fs.writeFileSync(fname, data, (err) => {
@@ -274,8 +274,6 @@ class ScrapeManager {
         } else {
             // if no custom start_browser functionality was given
             // use puppeteer-cluster for scraping
-            const { Cluster } = require('./puppeteer-cluster/dist/index.js');
-
             this.numClusters = this.config.puppeteer_cluster_config.maxConcurrency;
             var perBrowserOptions = [];
 

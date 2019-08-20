@@ -1,4 +1,4 @@
-const { Cluster } = require('../../puppeteer-cluster/dist/index.js');
+const { Cluster } = require('puppeteer-cluster');
 var fs = require('fs');
 var os = require("os");
 
