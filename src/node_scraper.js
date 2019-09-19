@@ -260,7 +260,7 @@ class ScrapeManager {
         log(this.config, 2, `Using the following puppeteer configuration: ${launch_args}`);
 
         launch_args.config = this.config;
-        this.browser = await puppeteer.launch();
+        this.browser = await puppeteer.launch(launch_args);
         this.page = await this.browser.newPage();
     }
 
