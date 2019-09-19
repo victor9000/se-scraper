@@ -2,7 +2,7 @@
 const zlib = require('zlib');
 var fs = require('fs');
 var os = require("os");
-const { Cluster } = require('puppeteer-cluster');
+const puppeteer = require('puppeteer');
 
 const UserAgent = require('user-agents');
 const google = require('./modules/google.js');
@@ -70,7 +70,6 @@ class ScrapeManager {
 
     constructor(config, context={}) {
 
-        this.cluster = null;
         this.pluggable = null;
         this.scraper = null;
         this.context = context;
@@ -146,13 +145,6 @@ class ScrapeManager {
             // this is a quick test and should be used for debugging
             test_evasion: false,
             apply_evasion_techniques: true,
-            // settings for puppeteer-cluster
-            puppeteer_cluster_config: {
-                timeout: 30 * 60 * 1000, // max timeout set to 30 minutes
-                monitor: false,
-                concurrency: Cluster.CONCURRENCY_BROWSER,
-                maxConcurrency: 1,
-            }
         };
 
         this.config.proxies = [];
@@ -184,7 +176,7 @@ class ScrapeManager {
     }
 
     /*
-     * Launches the puppeteer cluster or browser.
+     * Launches the puppeteer browser.
      *
      * Returns true if the browser was successfully launched. Otherwise will return false.
      */
@@ -267,76 +259,9 @@ class ScrapeManager {
 
         log(this.config, 2, `Using the following puppeteer configuration: ${launch_args}`);
 
-        if (this.pluggable) {
-            launch_args.config = this.config;
-            this.browser = await this.pluggable.start_browser(launch_args);
-            this.page = await this.browser.newPage();
-        } else {
-            // if no custom start_browser functionality was given
-            // use puppeteer-cluster for scraping
-            this.numClusters = this.config.puppeteer_cluster_config.maxConcurrency;
-            var perBrowserOptions = [];
-
-            // the first browser this.config with home IP
-            if (!this.config.use_proxies_only) {
-                perBrowserOptions.push(launch_args);
-            }
-
-            // if we have at least one proxy, always use CONCURRENCY_BROWSER
-            // and set maxConcurrency to this.config.proxies.length + 1
-            // else use whatever this.configuration was passed
-            if (this.config.proxies.length > 0) {
-                this.config.puppeteer_cluster_config.concurrency = Cluster.CONCURRENCY_BROWSER;
-
-                // because we use real browsers, we ran out of memory on normal laptops
-                // when using more than maybe 5 or 6 browsers.
-                // therefore hardcode a limit here
-                this.numClusters = Math.min(
-                    this.config.proxies.length + (this.config.use_proxies_only ? 0 : 1),
-                    MAX_ALLOWED_BROWSERS
-                );
-
-                log(this.config, 1, `Using ${this.numClusters} clusters.`);
-
-                this.config.puppeteer_cluster_config.maxConcurrency = this.numClusters;
-
-                for (var proxy of this.config.proxies) {
-                    perBrowserOptions.push({
-                        headless: this.config.headless,
-                        ignoreHTTPSErrors: true,
-                        args: chrome_flags.concat(`--proxy-server=${proxy}`)
-                    })
-                }
-            }
-
-            // Give the per browser options each a random user agent when random user agent is set
-            while (perBrowserOptions.length < this.numClusters) {
-                const userAgent = new UserAgent();
-                perBrowserOptions.push({
-                    headless: this.config.headless,
-                    ignoreHTTPSErrors: true,
-                    args: default_chrome_flags.slice().concat(`--user-agent=${userAgent.toString()}`)
-                })
-            }
-
-            if (this.config.debug_level >= 2) {
-                console.dir(perBrowserOptions)
-            }
-
-            this.cluster = await Cluster.launch({
-                monitor: this.config.puppeteer_cluster_config.monitor,
-                timeout: this.config.puppeteer_cluster_config.timeout, // max timeout set to 30 minutes
-                concurrency: this.config.puppeteer_cluster_config.concurrency,
-                maxConcurrency: this.config.puppeteer_cluster_config.maxConcurrency,
-                puppeteerOptions: launch_args,
-                perBrowserOptions: perBrowserOptions,
-            });
-
-            this.cluster.on('taskerror', (err, data) => {
-                console.log(`Error while scraping ${data}: ${err.message}`);
-                console.log(err);
-            });
-        }
+        launch_args.config = this.config;
+        this.browser = await puppeteer.launch();
+        this.page = await this.browser.newPage();
     }
 
     /*
@@ -363,65 +288,19 @@ class ScrapeManager {
                 `[se-scraper] started at [${(new Date()).toUTCString()}] and scrapes ${this.config.search_engine_name} with ${this.config.keywords.length} keywords on ${this.config.num_pages} pages each.`)
         }
 
-        if (this.pluggable) {
-            this.scraper = getScraper(this.config.search_engine, {
-                config: this.config,
-                context: this.context,
-                pluggable: this.pluggable,
-                page: this.page,
-            });
+        // do scraping
+        this.scraper = getScraper(this.config.search_engine, {
+            config: this.config,
+            context: this.context,
+            pluggable: this.pluggable,
+            page: this.page,
+        });
+        let res = await this.scraper.run({page: this.page});
+        results = res.results;
+        metadata = this.scraper.metadata;
+        num_requests = this.scraper.num_requests;
 
-            var {results, metadata, num_requests} = await this.scraper.run(this.page);
-
-        } else {
-            // Each browser will get N/(K+1) keywords and will issue N/(K+1) * M total requests to the search engine.
-            // https://github.com/GoogleChrome/puppeteer/issues/678
-            // The question is: Is it possible to set proxies per Page? Per Browser?
-            // as far as I can see, puppeteer cluster uses the same puppeteerOptions
-            // for every browser instance. We will use our custom puppeteer-cluster version.
-            // https://www.npmjs.com/package/proxy-chain
-            // this answer looks nice: https://github.com/GoogleChrome/puppeteer/issues/678#issuecomment-389096077
-            let chunks = [];
-            for (var n = 0; n < this.numClusters; n++) {
-                chunks.push([]);
-            }
-            for (var k = 0; k < this.config.keywords.length; k++) {
-                chunks[k % this.numClusters].push(this.config.keywords[k]);
-            }
-
-            let execPromises = [];
-            let scraperInstances = [];
-            for (var c = 0; c < chunks.length; c++) {
-                this.config.keywords = chunks[c];
-
-                if (this.config.use_proxies_only) {
-                    this.config.proxy = this.config.proxies[c]; // every cluster has a dedicated proxy
-                } else if(c > 0) {
-                    this.config.proxy = this.config.proxies[c-1]; // first cluster uses own ip address
-                }
-
-                var obj = getScraper(this.config.search_engine, {
-                    config: this.config,
-                    context: {},
-                    pluggable: this.pluggable,
-                });
-
-                var boundMethod = obj.run.bind(obj);
-                execPromises.push(this.cluster.execute({}, boundMethod));
-                scraperInstances.push(obj);
-            }
-
-            let promiseReturns = await Promise.all(execPromises);
-
-            // Merge results and metadata per keyword
-            for (let promiseReturn of promiseReturns) {
-                Object.assign(results, promiseReturn.results);
-                Object.assign(metadata, promiseReturn.metadata);
-                num_requests += promiseReturn.num_requests;
-            }
-
-        }
-
+        // log
         let timeDelta = Date.now() - startTime;
         let ms_per_request = timeDelta/num_requests;
 
@@ -468,15 +347,10 @@ class ScrapeManager {
     }
 
     /*
-     * Quits the puppeteer cluster/browser.
+     * Quits the puppeteer browser.
      */
     async quit() {
-        if (this.pluggable && this.pluggable.close_browser) {
-            await this.pluggable.close_browser();
-        } else {
-            await this.cluster.idle();
-            await this.cluster.close();
-        }
+        await this.browser.close();
     }
 }
 
