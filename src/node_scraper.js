@@ -215,6 +215,7 @@ class ScrapeManager {
             '--start-fullscreen',
             '--hide-scrollbars',
             '--disable-notifications',
+            '--single-process',
         ];
 
         var chrome_flags = default_chrome_flags.slice(); // copy that
