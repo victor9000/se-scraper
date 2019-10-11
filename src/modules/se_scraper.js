@@ -277,49 +277,8 @@ module.exports = class Scraper {
                 } while (this.page_num <= this.config.num_pages);
 
             } catch (e) {
-
                 console.error(`Problem with scraping ${keyword} in search engine ${this.config.search_engine_name}: ${e}`);
-
-                if (this.last_response) {
-                    log(this.config, 2, this.last_response);
-                }
-
-                if (this.config.debug_level > 2) {
-                    try {
-                        // Try to save a screenshot of the error
-                        await this.page.screenshot({path: `debug_se_scraper_${this.config.search_engine_name}_${keyword}.png`});
-                    } catch (e) {
-                    }
-                }
-
-                if (await this.detected() === true) {
-                    console.error(`${this.config.search_engine_name} detected the scraping!`);
-
-                    if (this.config.is_local === true) {
-                        await this.sleep(this.SOLVE_CAPTCHA_TIME);
-                        console.error(`You have ${this.SOLVE_CAPTCHA_TIME}ms to enter the captcha.`);
-                        // expect that user filled out necessary captcha
-                    } else {
-                        if (this.config.throw_on_detection === true) {
-                            throw( e );
-                        } else {
-                            break;
-                        }
-                    }
-                } else {
-                    // some other error, quit scraping process if stuff is broken
-                    if (this.config.is_local === true) {
-                        console.error('You have 30 seconds to fix this.');
-                        await this.sleep(30000);
-                    } else {
-                        if (this.config.throw_on_detection === true) {
-                            throw( e );
-                        } else {
-                            break;
-                        }
-                    }
-                }
-
+                throw e;
             }
         }
     }
