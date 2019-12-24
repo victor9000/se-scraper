@@ -114,7 +114,7 @@ module.exports = class Scraper {
                     }
                 }
                 // no block condition was satisfied, carry on.
-                req.continue();
+                req.continue().catch(error => {});
             });
         }
 
