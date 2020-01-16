@@ -87,7 +87,7 @@ class BingScraper extends Scraper {
     }
 
     async next_page() {
-        let next_page_link = await this.page.$('.sb_pagN', {timeout: 1000});
+        let next_page_link = await this.page.$('.sb_pagN:not(.sb_inactP)', {timeout: 1000});
         if (!next_page_link) {
             return false;
         }
